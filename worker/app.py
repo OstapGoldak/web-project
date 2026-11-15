@@ -13,6 +13,8 @@ from shared.database import get_db, SessionLocal
 from shared.models import Task
 from gauss import solve, validate, TaskLimitError, TaskCancelled, SingularMatrixError
 
+from fastapi.staticfiles import StaticFiles
+
 MAX_TASKS_PER_USER = 10
 CURRENT_USER_ID = 1  # тимчасово, до кроку з авторизацією
 
@@ -136,3 +138,6 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
     db.delete(task)
     db.commit()
     return {"deleted": task_id}
+
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

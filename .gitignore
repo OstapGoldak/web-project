@@ -1,5 +1,7 @@
+@"
 .venv/
 __pycache__/
 *.pyc
 .env
 big.json
+"@ | Set-Content .gitignore -Encoding utf8

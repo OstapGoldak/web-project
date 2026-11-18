@@ -1,6 +1,8 @@
 const MAX_N = 300;
 let currentId = null;
 let eta = null;
+let timer = null;
+let historyTimer = null;
 let token = localStorage.getItem("token");
 
 const $ = (id) => document.getElementById(id);
@@ -20,6 +22,8 @@ function showApp() {
   $("user").textContent = localStorage.getItem("username") || "";
   buildMatrix();
   loadHistory();
+  clearInterval(historyTimer);
+  historyTimer = setInterval(loadHistory, 1500);
 }
 
 function showAuth() {
@@ -31,6 +35,7 @@ function logout() {
   token = null;
   currentId = null;
   clearInterval(timer);
+  clearInterval(historyTimer);
   localStorage.removeItem("token");
   localStorage.removeItem("username");
   $("current").textContent = "Немає активної задачі";
@@ -176,12 +181,19 @@ async function loadHistory() {
   const res = await api("/tasks");
   if (!res.ok) return;
   const tasks = await res.json();
+    if (currentId === null) {
+    const active = tasks.find((t) => ["queued", "running"].includes(t.status));
+    if (active) {
+      currentId = active.id;
+      startPolling();
+    }
+  }
   const tbody = document.querySelector("#history tbody");
   tbody.innerHTML = "";
   for (const t of tasks) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${t.id}</td><td>${t.size}</td><td>${t.status}</td><td>${t.progress}%</td>
+      <td>${t.id}</td><td>${t.size}</td><td>${t.status}</td><td><progress value="${t.progress}" max="100"></progress> ${t.progress}%</td>
       <td>${new Date(t.created_at).toLocaleString()}</td>
       <td><button data-view="${t.id}">Дивитись</button><button data-del="${t.id}">Видалити</button></td>`;
     tbody.appendChild(tr);

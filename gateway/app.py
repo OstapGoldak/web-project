@@ -20,13 +20,19 @@ from shared.models import User
 from shared.auth import hash_password, verify_password, create_token
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from shared.auth import decode_token
+from contextlib import asynccontextmanager
+from gateway.cluster import cluster
 
 MAX_TASKS_PER_USER = 10
-WORKER_URLS = os.getenv(
-    "WORKER_URLS", "http://localhost:8001,http://localhost:8002"
-).split(",")
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    cluster.start()
+    yield
+    cluster.stop()
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 class TaskCreate(BaseModel):
@@ -38,14 +44,14 @@ class Credentials(BaseModel):
     password: str = Field(min_length=4, max_length=72)
 
 def pick_workers(db: Session) -> list[str]:
+    urls = cluster.urls()
     loads = {
         url: db.query(Task)
         .filter(Task.worker_url == url, Task.status.in_(("queued", "running")))
         .count()
-        for url in WORKER_URLS
+        for url in urls
     }
-    urls = WORKER_URLS[:]
-    random.shuffle(urls)  # при однаковому навантаженні вибір випадковий
+    random.shuffle(urls)
     return sorted(urls, key=lambda u: loads[u])
 
 

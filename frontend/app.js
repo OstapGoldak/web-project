@@ -1,6 +1,6 @@
 const MAX_N = 300;
 let currentId = null;
-let timer = null;
+let eta = null;
 let token = localStorage.getItem("token");
 
 const $ = (id) => document.getElementById(id);
@@ -133,6 +133,7 @@ async function submitTask() {
     return;
   }
   currentId = json.id;
+    eta = json.queued ? json.eta_seconds : null;
   startPolling();
   loadHistory();
 }
@@ -150,6 +151,11 @@ async function pollCurrent() {
   const t = await res.json();
   $("bar").value = t.progress;
   let text = `Задача #${t.id} (${t.worker}): ${t.status}, ${t.progress}%`;
+    if (t.status === "queued") {
+    text += eta !== null
+      ? `. Усі сервери зайняті, задачу поставлено в чергу. Орієнтовне очікування: ~${eta} с`
+      : ". У черзі";
+  }
   if (t.status === "done") text += `. Розв'язок: [${t.result.x.map((v) => v.toFixed(4)).join(", ")}]`;
   if (t.status === "failed") text += `. Помилка: ${t.error}`;
   $("current").textContent = text;
@@ -185,6 +191,7 @@ async function loadHistory() {
 document.querySelector("#history tbody").addEventListener("click", async (e) => {
   if (e.target.dataset.view) {
     currentId = parseInt(e.target.dataset.view);
+    eta = null;
     startPolling();
   }
   if (e.target.dataset.del) {

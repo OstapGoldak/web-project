@@ -107,8 +107,16 @@ def create_task(data: TaskCreate, user: User = Depends(get_current_user), db: Se
         task.worker_url = url
         db.commit()
         try:
-            httpx.post(f"{url}/run/{task.id}", timeout=5).raise_for_status()
-            return {"id": task.id, "status": task.status, "worker": url}
+            reply = httpx.post(f"{url}/run/{task.id}", timeout=5)
+            reply.raise_for_status()
+            info = reply.json()
+            return {
+                "id": task.id,
+                "status": task.status,
+                "worker": url,
+                "queued": info["queued"],
+                "eta_seconds": info["eta_seconds"],
+            }
         except httpx.HTTPError:
             continue  # воркер недоступний, пробуємо наступний
 

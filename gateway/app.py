@@ -3,6 +3,7 @@ import random
 import sys
 from datetime import datetime
 from pathlib import Path
+from pydantic import Field
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
@@ -15,6 +16,8 @@ from sqlalchemy.orm import Session
 from shared.database import get_db
 from shared.models import Task
 from shared.gauss import validate, TaskLimitError
+from shared.models import User
+from shared.auth import hash_password, verify_password, create_token
 
 MAX_TASKS_PER_USER = 10
 CURRENT_USER_ID = 1  # тимчасово, до авторизації
@@ -29,6 +32,9 @@ class TaskCreate(BaseModel):
     a: list[list[float]]
     b: list[float]
 
+class Credentials(BaseModel):
+    username: str = Field(min_length=3, max_length=50)
+    password: str = Field(min_length=4, max_length=72)
 
 def pick_workers(db: Session) -> list[str]:
     loads = {
@@ -40,6 +46,23 @@ def pick_workers(db: Session) -> list[str]:
     urls = WORKER_URLS[:]
     random.shuffle(urls)  # при однаковому навантаженні вибір випадковий
     return sorted(urls, key=lambda u: loads[u])
+
+@app.post("/register")
+def register(data: Credentials, db: Session = Depends(get_db)):
+    if db.query(User).filter(User.username == data.username).first():
+        raise HTTPException(400, "Такий логін уже існує")
+    user = User(username=data.username, password_hash=hash_password(data.password))
+    db.add(user)
+    db.commit()
+    return {"id": user.id, "username": user.username}
+
+
+@app.post("/login")
+def login(data: Credentials, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == data.username).first()
+    if not user or not verify_password(data.password, user.password_hash):
+        raise HTTPException(401, "Неправильний логін або пароль")
+    return {"access_token": create_token(user.id)}
 
 
 @app.post("/tasks")

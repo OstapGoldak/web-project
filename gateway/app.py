@@ -18,9 +18,10 @@ from shared.models import Task
 from shared.gauss import validate, TaskLimitError
 from shared.models import User
 from shared.auth import hash_password, verify_password, create_token
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from shared.auth import decode_token
 
 MAX_TASKS_PER_USER = 10
-CURRENT_USER_ID = 1  # тимчасово, до авторизації
 WORKER_URLS = os.getenv(
     "WORKER_URLS", "http://localhost:8001,http://localhost:8002"
 ).split(",")
@@ -47,6 +48,23 @@ def pick_workers(db: Session) -> list[str]:
     random.shuffle(urls)  # при однаковому навантаженні вибір випадковий
     return sorted(urls, key=lambda u: loads[u])
 
+
+bearer = HTTPBearer(auto_error=False)
+
+
+def get_current_user(
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+    db: Session = Depends(get_db),
+) -> User:
+    if creds is None:
+        raise HTTPException(401, "Потрібна авторизація")
+    user_id = decode_token(creds.credentials)
+    user = db.get(User, user_id) if user_id is not None else None
+    if user is None:
+        raise HTTPException(401, "Недійсний токен")
+    return user
+
+
 @app.post("/register")
 def register(data: Credentials, db: Session = Depends(get_db)):
     if db.query(User).filter(User.username == data.username).first():
@@ -66,18 +84,18 @@ def login(data: Credentials, db: Session = Depends(get_db)):
 
 
 @app.post("/tasks")
-def create_task(data: TaskCreate, db: Session = Depends(get_db)):
+def create_task(data: TaskCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
         validate(data.a, data.b)
     except TaskLimitError as e:
         raise HTTPException(400, str(e))
 
-    count = db.query(Task).filter(Task.user_id == CURRENT_USER_ID).count()
+    count = db.query(Task).filter(Task.user_id == user.id).count()
     if count >= MAX_TASKS_PER_USER:
         raise HTTPException(400, f"Максимум {MAX_TASKS_PER_USER} задач, видаліть старі")
 
     task = Task(
-        user_id=CURRENT_USER_ID,
+        user_id=user.id,
         size=len(data.a),
         input_data={"a": data.a, "b": data.b},
     )
@@ -102,10 +120,10 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/tasks")
-def list_tasks(db: Session = Depends(get_db)):
+def list_tasks(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     tasks = (
         db.query(Task)
-        .filter(Task.user_id == CURRENT_USER_ID)
+        .filter(Task.user_id == user.id)
         .order_by(Task.id.desc())
         .all()
     )
@@ -122,9 +140,9 @@ def list_tasks(db: Session = Depends(get_db)):
 
 
 @app.get("/tasks/{task_id}")
-def get_task(task_id: int, db: Session = Depends(get_db)):
+def get_task(task_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task = db.get(Task, task_id)
-    if not task or task.user_id != CURRENT_USER_ID:
+    if not task or task.user_id != user.id:
         raise HTTPException(404, "Задачу не знайдено")
     return {
         "id": task.id,
@@ -140,9 +158,9 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/tasks/{task_id}/cancel")
-def cancel_task(task_id: int, db: Session = Depends(get_db)):
+def cancel_task(task_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task = db.get(Task, task_id)
-    if not task or task.user_id != CURRENT_USER_ID:
+    if not task or task.user_id != user.id:
         raise HTTPException(404, "Задачу не знайдено")
     if task.status not in ("queued", "running"):
         raise HTTPException(400, "Задача вже завершена")
@@ -152,9 +170,9 @@ def cancel_task(task_id: int, db: Session = Depends(get_db)):
 
 
 @app.delete("/tasks/{task_id}")
-def delete_task(task_id: int, db: Session = Depends(get_db)):
+def delete_task(task_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task = db.get(Task, task_id)
-    if not task or task.user_id != CURRENT_USER_ID:
+    if not task or task.user_id != user.id:
         raise HTTPException(404, "Задачу не знайдено")
     db.delete(task)
     db.commit()

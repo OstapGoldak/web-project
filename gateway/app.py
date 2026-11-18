@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +18,9 @@ from shared.gauss import validate, TaskLimitError
 
 MAX_TASKS_PER_USER = 10
 CURRENT_USER_ID = 1  # тимчасово, до авторизації
-WORKER_URLS = os.getenv("WORKER_URLS", "http://localhost:8001").split(",")
+WORKER_URLS = os.getenv(
+    "WORKER_URLS", "http://localhost:8001,http://localhost:8002"
+).split(",")
 
 app = FastAPI()
 
@@ -27,8 +30,16 @@ class TaskCreate(BaseModel):
     b: list[float]
 
 
-def pick_worker() -> str:
-    return WORKER_URLS[0]  # балансування додамо на кроці 7
+def pick_workers(db: Session) -> list[str]:
+    loads = {
+        url: db.query(Task)
+        .filter(Task.worker_url == url, Task.status.in_(("queued", "running")))
+        .count()
+        for url in WORKER_URLS
+    }
+    urls = WORKER_URLS[:]
+    random.shuffle(urls)  # при однаковому навантаженні вибір випадковий
+    return sorted(urls, key=lambda u: loads[u])
 
 
 @app.post("/tasks")
@@ -51,19 +62,20 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(task)
 
-    url = pick_worker()
-    task.worker_url = url
-    db.commit()
-    try:
-        httpx.post(f"{url}/run/{task.id}", timeout=5).raise_for_status()
-    except httpx.HTTPError:
-        task.status = "failed"
-        task.error = "Воркер недоступний"
-        task.finished_at = datetime.utcnow()
+    for url in pick_workers(db):
+        task.worker_url = url
         db.commit()
-        raise HTTPException(503, "Воркер недоступний")
+        try:
+            httpx.post(f"{url}/run/{task.id}", timeout=5).raise_for_status()
+            return {"id": task.id, "status": task.status, "worker": url}
+        except httpx.HTTPError:
+            continue  # воркер недоступний, пробуємо наступний
 
-    return {"id": task.id, "status": task.status}
+    task.status = "failed"
+    task.error = "Усі воркери недоступні"
+    task.finished_at = datetime.utcnow()
+    db.commit()
+    raise HTTPException(503, "Усі воркери недоступні")
 
 
 @app.get("/tasks")
@@ -98,6 +110,7 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
         "size": task.size,
         "result": task.result,
         "error": task.error,
+        "worker": task.worker_url,
         "created_at": task.created_at,
         "finished_at": task.finished_at,
     }

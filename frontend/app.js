@@ -73,7 +73,7 @@ async function pollCurrent() {
   if (!res.ok) return;
   const t = await res.json();
   $("bar").value = t.progress;
-  let text = `Задача #${t.id}: ${t.status}, ${t.progress}%`;
+  let text = `Задача #${t.id} (${t.worker}): ${t.status}, ${t.progress}%`;
   if (t.status === "done") text += `. Розв'язок: [${t.result.x.map((v) => v.toFixed(4)).join(", ")}]`;
   if (t.status === "failed") text += `. Помилка: ${t.error}`;
   $("current").textContent = text;

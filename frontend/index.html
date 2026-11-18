@@ -8,30 +8,43 @@
 <body>
   <h1>Розв'язування СЛАР методом Гауса</h1>
 
-  <section>
-    <h2>Нова задача</h2>
-    <label>Кількість невідомих (n): <input type="number" id="n" value="3" min="1" max="300"></label>
-    <button id="gen">Створити поля</button>
-    <button id="random">Заповнити випадково</button>
-    <div id="matrix"></div>
-    <button id="submit">Запустити</button>
-    <p id="error" class="error"></p>
+  <section id="auth">
+    <h2>Вхід</h2>
+    <input id="username" placeholder="Логін" autocomplete="username">
+    <input id="password" type="password" placeholder="Пароль" autocomplete="current-password">
+    <button id="login">Увійти</button>
+    <button id="register">Зареєструватися</button>
+    <p id="auth-error" class="error"></p>
   </section>
 
-  <section>
-    <h2>Поточна задача</h2>
-    <div id="current">Немає активної задачі</div>
-    <progress id="bar" value="0" max="100"></progress>
-    <button id="cancel" disabled>Скасувати</button>
-  </section>
+  <div id="app" hidden>
+    <p>Ви увійшли як <b id="user"></b> <button id="logout">Вийти</button></p>
 
-  <section>
-    <h2>Історія</h2>
-    <table id="history">
-      <thead><tr><th>ID</th><th>n</th><th>Статус</th><th>Прогрес</th><th>Створено</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
+    <section>
+      <h2>Нова задача</h2>
+      <label>Кількість невідомих (n): <input type="number" id="n" value="3" min="1" max="300"></label>
+      <button id="gen">Створити поля</button>
+      <button id="random">Заповнити випадково</button>
+      <div id="matrix"></div>
+      <button id="submit">Запустити</button>
+      <p id="error" class="error"></p>
+    </section>
+
+    <section>
+      <h2>Поточна задача</h2>
+      <div id="current">Немає активної задачі</div>
+      <progress id="bar" value="0" max="100"></progress>
+      <button id="cancel" disabled>Скасувати</button>
+    </section>
+
+    <section>
+      <h2>Історія</h2>
+      <table id="history">
+        <thead><tr><th>ID</th><th>n</th><th>Статус</th><th>Прогрес</th><th>Створено</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </div>
 
   <script src="app.js"></script>
 </body>

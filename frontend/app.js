@@ -1,8 +1,84 @@
 const MAX_N = 300;
 let currentId = null;
 let timer = null;
+let token = localStorage.getItem("token");
 
 const $ = (id) => document.getElementById(id);
+
+// fetch, який сам додає токен і розлогінює при 401
+async function api(url, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(url, { ...options, headers });
+  if (res.status === 401 && token) logout();
+  return res;
+}
+
+function showApp() {
+  $("auth").hidden = true;
+  $("app").hidden = false;
+  $("user").textContent = localStorage.getItem("username") || "";
+  buildMatrix();
+  loadHistory();
+}
+
+function showAuth() {
+  $("auth").hidden = false;
+  $("app").hidden = true;
+}
+
+function logout() {
+  token = null;
+  currentId = null;
+  clearInterval(timer);
+  localStorage.removeItem("token");
+  localStorage.removeItem("username");
+  $("current").textContent = "Немає активної задачі";
+  $("bar").value = 0;
+  showAuth();
+}
+
+// 422 від pydantic повертає detail списком, а наші помилки рядком
+function authError(json) {
+  return typeof json.detail === "string"
+    ? json.detail
+    : "Логін від 3 символів, пароль від 4";
+}
+
+async function sendCredentials(path) {
+  return fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      username: $("username").value.trim(),
+      password: $("password").value,
+    }),
+  });
+}
+
+async function login() {
+  const res = await sendCredentials("/login");
+  const json = await res.json();
+  if (!res.ok) {
+    $("auth-error").textContent = authError(json);
+    return;
+  }
+  token = json.access_token;
+  localStorage.setItem("token", token);
+  localStorage.setItem("username", $("username").value.trim());
+  $("auth-error").textContent = "";
+  $("password").value = "";
+  showApp();
+}
+
+async function register() {
+  const res = await sendCredentials("/register");
+  if (!res.ok) {
+    $("auth-error").textContent = authError(await res.json());
+    return;
+  }
+  await login();
+}
 
 function buildMatrix() {
   const n = parseInt($("n").value);
@@ -46,14 +122,14 @@ async function submitTask() {
     $("error").textContent = `Максимум ${MAX_N} невідомих`;
     return;
   }
-  const res = await fetch("/tasks", {
+  const res = await api("/tasks", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
   const json = await res.json();
   if (!res.ok) {
-    $("error").textContent = json.detail;
+    $("error").textContent = typeof json.detail === "string" ? json.detail : "Некоректні дані";
     return;
   }
   currentId = json.id;
@@ -69,7 +145,7 @@ function startPolling() {
 
 async function pollCurrent() {
   if (!currentId) return;
-  const res = await fetch(`/tasks/${currentId}`);
+  const res = await api(`/tasks/${currentId}`);
   if (!res.ok) return;
   const t = await res.json();
   $("bar").value = t.progress;
@@ -86,12 +162,13 @@ async function pollCurrent() {
 
 async function cancelTask() {
   if (!currentId) return;
-  await fetch(`/tasks/${currentId}/cancel`, { method: "POST" });
+  await api(`/tasks/${currentId}/cancel`, { method: "POST" });
   pollCurrent();
 }
 
 async function loadHistory() {
-  const res = await fetch("/tasks");
+  const res = await api("/tasks");
+  if (!res.ok) return;
   const tasks = await res.json();
   const tbody = document.querySelector("#history tbody");
   tbody.innerHTML = "";
@@ -111,15 +188,18 @@ document.querySelector("#history tbody").addEventListener("click", async (e) => 
     startPolling();
   }
   if (e.target.dataset.del) {
-    await fetch(`/tasks/${e.target.dataset.del}`, { method: "DELETE" });
+    await api(`/tasks/${e.target.dataset.del}`, { method: "DELETE" });
     loadHistory();
   }
 });
 
+$("login").onclick = login;
+$("register").onclick = register;
+$("logout").onclick = logout;
 $("gen").onclick = buildMatrix;
 $("random").onclick = fillRandom;
 $("submit").onclick = submitTask;
 $("cancel").onclick = cancelTask;
 
-buildMatrix();
-loadHistory();
+if (token) showApp();
+else showAuth();

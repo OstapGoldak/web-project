@@ -3,6 +3,7 @@ let currentId = null;
 let eta = null;
 let timer = null;
 let historyTimer = null;
+let adminTimer = null;
 let token = localStorage.getItem("token");
 
 const $ = (id) => document.getElementById(id);
@@ -22,6 +23,7 @@ function showApp() {
   $("user").textContent = localStorage.getItem("username") || "";
   buildMatrix();
   loadHistory();
+  loadMe();
   clearInterval(historyTimer);
   historyTimer = setInterval(loadHistory, 1500);
 }
@@ -36,10 +38,12 @@ function logout() {
   currentId = null;
   clearInterval(timer);
   clearInterval(historyTimer);
+  clearInterval(adminTimer);
   localStorage.removeItem("token");
   localStorage.removeItem("username");
   $("current").textContent = "Немає активної задачі";
   $("bar").value = 0;
+  $("admin").hidden = true;
   showAuth();
 }
 
@@ -211,6 +215,42 @@ document.querySelector("#history tbody").addEventListener("click", async (e) => 
     loadHistory();
   }
 });
+
+async function loadMe() {
+  const res = await api("/me");
+  if (!res.ok) return;
+  const me = await res.json();
+  $("user").textContent = me.username;
+  if (me.is_admin) {
+    $("admin").hidden = false;
+    clearInterval(adminTimer);
+    adminTimer = setInterval(loadAdmin, 2000);
+    loadAdmin();
+  }
+}
+
+async function loadAdmin() {
+  const res = await api("/admin/stats");
+  if (!res.ok) return;
+  const s = await res.json();
+  const byStatus = Object.entries(s.tasks_by_status).map(([k, v]) => `${k}: ${v}`).join(", ");
+  $("admin-summary").textContent =
+    `Користувачів: ${s.users}. Задач у БД: ${s.tasks_total} (${byStatus || "—"}). Максимум серверів: ${s.max_workers}`;
+
+  document.querySelector("#workers tbody").innerHTML = s.workers.map((w) => `
+    <tr>
+      <td>${w.url}</td>
+      <td>${w.dynamic ? "автозапуск" : "постійний"}</td>
+      <td>${w.alive ? "працює" : "недоступний"}</td>
+      <td>${w.active}</td><td>${w.queued}</td><td>${w.max_active}</td>
+    </tr>`).join("");
+
+  document.querySelector("#active-tasks tbody").innerHTML = s.active_tasks.length
+    ? s.active_tasks.map((t) => `
+      <tr><td>${t.id}</td><td>${t.user}</td><td>${t.size}</td><td>${t.status}</td>
+      <td><progress value="${t.progress}" max="100"></progress> ${t.progress}%</td><td>${t.worker || "—"}</td></tr>`).join("")
+    : `<tr><td colspan="6">Немає активних задач</td></tr>`;
+}
 
 $("login").onclick = login;
 $("register").onclick = register;

@@ -21,9 +21,13 @@ from shared.auth import hash_password, verify_password, create_token
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from shared.auth import decode_token
 from contextlib import asynccontextmanager
-from gateway.cluster import cluster
+from gateway.cluster import cluster, MAX_WORKERS
+from sqlalchemy import func
 
 MAX_TASKS_PER_USER = 10
+ADMIN_USERNAMES = {
+    u.strip() for u in os.getenv("ADMIN_USERNAMES", "admin").split(",") if u.strip()
+}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -71,6 +75,12 @@ def get_current_user(
     return user
 
 
+def get_admin(user: User = Depends(get_current_user)) -> User:
+    if user.username not in ADMIN_USERNAMES:
+        raise HTTPException(403, "Доступ лише для адміністратора")
+    return user
+
+
 @app.post("/register")
 def register(data: Credentials, db: Session = Depends(get_db)):
     if db.query(User).filter(User.username == data.username).first():
@@ -87,6 +97,41 @@ def login(data: Credentials, db: Session = Depends(get_db)):
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(401, "Неправильний логін або пароль")
     return {"access_token": create_token(user.id)}
+
+
+@app.get("/me")
+def me(user: User = Depends(get_current_user)):
+    return {"id": user.id, "username": user.username, "is_admin": user.username in ADMIN_USERNAMES}
+
+
+@app.get("/admin/stats")
+def admin_stats(admin: User = Depends(get_admin), db: Session = Depends(get_db)):
+    by_status = dict(db.query(Task.status, func.count(Task.id)).group_by(Task.status).all())
+    active = (
+        db.query(Task, User.username)
+        .join(User, User.id == Task.user_id)
+        .filter(Task.status.in_(("queued", "running")))
+        .order_by(Task.id)
+        .all()
+    )
+    return {
+        "workers": cluster.snapshot(),
+        "max_workers": MAX_WORKERS,
+        "users": db.query(User).count(),
+        "tasks_total": sum(by_status.values()),
+        "tasks_by_status": by_status,
+        "active_tasks": [
+            {
+                "id": t.id,
+                "user": username,
+                "status": t.status,
+                "progress": t.progress,
+                "size": t.size,
+                "worker": t.worker_url,
+            }
+            for t, username in active
+        ],
+    }
 
 
 @app.post("/tasks")

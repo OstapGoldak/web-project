@@ -5,7 +5,6 @@ from sqlalchemy.orm import relationship
 
 from .database import Base
 
-# queued, running, done, failed, cancelled
 
 
 class User(Base):

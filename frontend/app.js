@@ -8,7 +8,6 @@ let token = localStorage.getItem("token");
 
 const $ = (id) => document.getElementById(id);
 
-// fetch, який сам додає токен і розлогінює при 401
 async function api(url, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -47,7 +46,6 @@ function logout() {
   showAuth();
 }
 
-// 422 від pydantic повертає detail списком, а наші помилки рядком
 function authError(json) {
   return typeof json.detail === "string"
     ? json.detail

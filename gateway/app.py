@@ -169,7 +169,7 @@ def create_task(data: TaskCreate, user: User = Depends(get_current_user), db: Se
                 "eta_seconds": info["eta_seconds"],
             }
         except httpx.HTTPError:
-            continue  # воркер недоступний, пробуємо наступний
+            continue 
 
     task.status = "failed"
     task.error = "Усі воркери недоступні"
